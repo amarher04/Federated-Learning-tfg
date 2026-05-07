@@ -1,0 +1,30 @@
+# =========================
+# PYTHON (Servidor)
+# =========================
+# Entornos virtuales
+venv/
+env/
+.env
+
+# Archivos compilados y caché
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# =========================
+# ANDROID (Cliente Kotlin)
+# =========================
+# Carpetas de compilación
+build/
+android-client/app/build/
+android-client/.gradle/
+
+# Archivos locales de Android Studio
+local.properties
+.idea/
+*.iml
+
+# Archivos del sistema operativo (Mac/Windows)
+.DS_Store
+Thumbs.db
