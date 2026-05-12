@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    id("com.chaquo.python")
 }
 
 android {
@@ -20,10 +19,6 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-
-        ndk {
-            abiFilters += listOf("x86_64", "arm64-v8a")
-        }
     }
 
     buildTypes {
@@ -63,17 +58,4 @@ dependencies {
 
     // Libreria para hacer llamadas HTTP (API REST)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-}
-
-// Configuracion de Chaquopy (Python en Android)
-chaquopy {
-    defaultConfig {
-        version = "3.13"
-        pip {
-            buildPython("C:/Users/user/venv/Scripts/python.exe")
-            // Instalamos lo mismo que usas en el PC
-            install("numpy")
-            install("tensorflow")
-        }
-    }
 }

@@ -21,18 +21,10 @@ import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Inicializar motor Python
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
-
         setContent {
             PantallaPrincipal(context = this)
         }
@@ -105,28 +97,13 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                         fos.write(respDownload.body?.bytes() ?: byteArrayOf())
                         fos.close()
 
-                        actualizarPantalla("Modelo guardado. Entrenando modelo local en Android...")
+                        actualizarPantalla("Modelo guardado. Simulando entrenamiento...")
 
-                        // llamamos al script de python
-                        val py = Python.getInstance()
-                        val modulo = py.getModule("entrenador")
-
-                        // le pasamos ruta del archivo y las epochs que pide el servidor
-                        val resultadoPython = modulo.callAttr(
-                            "entrenar_modelo_local",
-                            archivoLocal.absolutePath,
-                            archivoLocal.absolutePath,
-                            json.getInt("epochs_locales") // leemos epochs del JSON
-                        ).toString()
-
-                        if (resultadoPython != "OK") {
-                            actualizarPantalla("Fallo en Python: $resultadoPython")
-                            delay(4000)
-                            continue // si falla, abortamos ronda y se vuelve a intentar
-                        }
+                        // Simulamos que entrenamos esperando 3seg
+                        delay(3000)
 
                         // 3. Subir modelo (/model/upload)
-                        actualizarPantalla("Entrenamiento completado. Enviando resultados al servidor...")
+                        actualizarPantalla("Enviando resultados al servidor...")
 
                         val fileBody = archivoLocal.asRequestBody("application/octet-stream".toMediaTypeOrNull())
 
