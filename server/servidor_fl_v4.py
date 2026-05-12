@@ -41,6 +41,7 @@ np.savez("modelo_global.npz", *modelo_global.get_weights())
 estado_servidor = {
     "experimento_id": f"EXP_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # ID único para cada ejecución del servidor basado en la fecha y hora de inicio
     "ronda_actual": 1,
+    "rondas_objetivo": 0, # Usamos como flag para saber si hay un experimento en curso o no (Si es 0, no hay experimento iniciado, servidor en reposo)
     "epochs_locales": 3,
     "clientes_esperados": 2,
     "metadatos_recibidos": [] # Guardara diccionarios con info de cada cliente (id, accuracy_local, etc)
@@ -146,6 +147,7 @@ async def subir_pesos(
 # Creamos un modelo para la petición de configuración del servidor
 class NuevaConfiguracion(BaseModel):
     epochs_locales: int
+    rondas_objetivo: int  # El director nos dira cuantas rondas quiere que dure el experimento
 
 @app.post("/admin/configurar")
 def configurar_servidor(config: NuevaConfiguracion):
@@ -157,6 +159,7 @@ def configurar_servidor(config: NuevaConfiguracion):
     # Limpiar variables del servidor
     estado_servidor["epochs_locales"] = config.epochs_locales
     estado_servidor["ronda_actual"] = 1
+    estado_servidor["rondas_objetivo"] = config.rondas_objetivo # Se activa flag de experimento en curso con el numero de rondas objetivo
     estado_servidor["metadatos_recibidos"].clear()
     
     # Crear un nuevo ID de experimento para diferenciarlo en el CSV (ponemos epochs en el ID para identificarlo fácilmente)

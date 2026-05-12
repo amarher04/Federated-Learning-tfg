@@ -15,7 +15,10 @@ for epochs in lista_epochs_a_probar:
     try:
         respuesta = requests.post(
             f"{URL_SERVIDOR}/admin/configurar",
-            json={"epochs_locales": epochs}
+            json={
+                "epochs_locales": epochs,
+                "rondas_objetivo": RONDAS_POR_EXPERIMENTO  # Le decimos la meta de rondas al servidor
+            }
         )
         print(f"Respuesta del servidor: {respuesta.json()}")
     except Exception as e:

@@ -39,6 +39,13 @@ def ejecutar_cliente_autonomo(id_cliente):
             config = requests.get(f"{URL_SERVIDOR}/config").json()
             ronda_servidor = config["ronda_actual"]
             experimento_servidor = config["experimento_id"] # Leemos ID del experimento
+            rondas_objetivo = config["rondas_objetivo"] # Leemos numero de rondas objetivo para este experimento
+            
+            # Si el servidor no ha iniciado un experimento (rondas_objetivo = 0) o ya hemos completado el experimento, esperamos
+            if rondas_objetivo == 0 or ronda_servidor > rondas_objetivo:
+                print(f"\r[Cliente {id_cliente}] Modo reposo. Esperando nuevo experimento... ", end="")
+                time.sleep(5)
+                continue  # Volvemos al inicio del bucle sin descargar ni entrenar
             
             # Si el servidor ha iniciado un nuevo experimento (ID diferente al que yo he completado), reseteamos
             if experimento_servidor != experimento_actual_por_mi:
@@ -48,7 +55,7 @@ def ejecutar_cliente_autonomo(id_cliente):
             
             # Si el servidor ya ha avanzado a una ronda superior a la que yo he completado, me pongo a trabajar
             if ronda_servidor > ronda_completada_por_mi:
-                print(f"\n [Cliente {id_cliente}] Nueva ronda detectada: {ronda_servidor}. Empezando entrenamiento local...\n")
+                print(f"\n [Cliente {id_cliente}] Nueva ronda detectada: {ronda_servidor} de {rondas_objetivo}. Empezando entrenamiento local...\n")
                 
                 # 1. Descargar modelo global
                 resp_modelo = requests.get(f"{URL_SERVIDOR}/model/download")
