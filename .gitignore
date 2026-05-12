@@ -12,6 +12,10 @@ __pycache__/
 *$py.class
 .pytest_cache/
 
+# Archivos de datos y modelos
+*.csv
+*.npz
+
 # =========================
 # ANDROID (Cliente Kotlin)
 # =========================
