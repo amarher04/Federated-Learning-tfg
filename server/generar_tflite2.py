@@ -9,29 +9,44 @@ class EntrenadorFederado(tf.Module):
             tf.keras.layers.Dense(128, activation='relu', input_shape=(784,)),
             tf.keras.layers.Dense(10, activation='softmax')  
         ])
-        # Optimizador y función de pérdida
-        self.model.compile(
-            optimizer = tf.keras.optimizers.SGD(learning_rate=0.01),
-            loss = tf.keras.losses.SparseCategoricalCrossentropy()
-        )
+        self.model(tf.zeros((1, 784))) # Forzamos creacion interna de variables con dato vacio
+        self.loss_fn = tf.keras.losses.SparseCategoricalCrossentropy() # Funcion de perdida
         
     # SIGNATURE 1: Entrenar
     @tf.function(input_signature=[
-        tf.TensorSpec([None, 784], tf.float32, name="x"),  # x (Imágenes aplanadas, batch fijo de 100)
-        tf.TensorSpec([None], tf.int32, name="y")          # y (Etiquetas reales, batch fijo de 100)
+        tf.TensorSpec([100, 784], tf.float32, name="x"),  # x (Imágenes aplanadas, batch fijo de 100)
+        tf.TensorSpec([100], tf.int32, name="y")          # y (Etiquetas reales, batch fijo de 100)
     ])
     def train(self, x, y):
         with tf.GradientTape() as tape:
             predicciones = self.model(x)
-            loss = self.model.loss(y, predicciones)
+            loss = self.loss_fn(y, predicciones)
         # Calcula como modificar los pesos y los aplica
         gradientes = tape.gradient(loss, self.model.trainable_variables)
-        self.model.optimizer.apply_gradients(zip(gradientes, self.model.trainable_variables))   
-        return {"loss": loss}
+        lr = tf.constant(0.01, dtype=tf.float32)
+        for var, grad in zip(self.model.trainable_variables, gradientes):
+            var.assign_sub(lr * grad)  # var = var - lr * grad
+            
+        return {"loss": tf.reshape(loss, [1])}  # Devolvemos el loss como un tensor de forma [1] para evitar problemas de mapeo en Kotlin
     
-    # SIGNATURE 2: Extraer pesos
-    @tf.function(input_signature=[])
-    def save(self):
+    # SIGNATURE 2: Inicializar memoria
+    @tf.function(input_signature=[
+        tf.TensorSpec([784, 128], tf.float32, name="p0"),
+        tf.TensorSpec([128], tf.float32, name="s0"),
+        tf.TensorSpec([128, 10], tf.float32, name="p1"),
+        tf.TensorSpec([10], tf.float32, name="s1"),
+    ])
+    def restore(self, p0, s0, p1, s1):
+        self.model.trainable_variables[0].assign(p0)
+        self.model.trainable_variables[1].assign(s0)
+        self.model.trainable_variables[2].assign(p1)
+        self.model.trainable_variables[3].assign(s1)
+        # Devolvemos un 1.0 para que el mapa de salida en Kotlin no esté vacío
+        return {"status": tf.constant([1.0], dtype=tf.float32)}
+    
+    # SIGNATURE 3: Extraer pesos
+    @tf.function(input_signature=[tf.TensorSpec([None, 784], tf.float32, name="x")])
+    def save(self, x):
         return {
             "pesos_0": self.model.trainable_variables[0],  # Pesos de la capa oculta
             "sesgos_0": self.model.trainable_variables[1],  # Sesgos de la capa oculta
@@ -42,12 +57,6 @@ class EntrenadorFederado(tf.Module):
 print("Construyendo el modelo...\n")
 modulo = EntrenadorFederado()
     
-# Ejecutar entrenamiento fantasma antes de convertirlo a TFLite para asegurar que las variables estén inicializadas
-print("Ejecutando entrenamiento inicial para inicializar el Optimizador...\n")
-x_dummy = tf.zeros((1, 784), dtype=tf.float32)
-y_dummy = tf.zeros((1,), dtype=tf.int32)
-modulo.train(x_dummy, y_dummy) 
-    
 # --- GUARDADO Y CONVERSION A TENSORFLOW LITE ---
 # Guardamos el modelo
 print("Guardando y convirtiendo a TFLite...\n")
@@ -56,6 +65,7 @@ tf.saved_model.save(
     "modelo_temporal",
     signatures={
         'train': modulo.train.get_concrete_function(),
+        'restore': modulo.restore.get_concrete_function(),
         'save': modulo.save.get_concrete_function(),
     }
 )

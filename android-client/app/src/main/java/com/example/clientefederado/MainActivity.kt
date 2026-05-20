@@ -16,11 +16,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.*
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
+import java.nio.MappedByteBuffer
+import java.nio.channels.FileChannel
+// Añadimos libreria TensorFlow Lite
+import org.tensorflow.lite.Interpreter
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -29,6 +32,14 @@ class MainActivity : ComponentActivity() {
             PantallaPrincipal(context = this)
         }
     }
+}
+
+// Funcion auxiliar para leer el archivo .tflite de la carpeta assets
+fun cargarModeloDesdeAssets(context: Context, nombreArchivo: String): MappedByteBuffer {
+    val fileDescriptor = context.assets.openFd(nombreArchivo)
+    val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
+    val fileChannel = inputStream.channel
+    return fileChannel.map(FileChannel.MapMode.READ_ONLY, fileDescriptor.startOffset, fileDescriptor.declaredLength)
 }
 
 @Composable
@@ -73,6 +84,8 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
         val cliente = OkHttpClient()
         var rondaCompletada = 0
 
+        var experimentoActual = ""
+
         while (true) {
             try {
                 // 1. Preguntar al servidor (/config)
@@ -83,9 +96,19 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                     // Extraemos ronda actual usando libreria JSON nativa de Android
                     val json = JSONObject(respConfig.body?.string() ?: "{}")
                     val rondaServidor = json.getInt("ronda_actual")
+                    val epochsLocales = json.optInt("epochs_locales", 1)
+
+                    // Leemos el ID del experimento del Servidor
+                    val experimentoServidor = json.optString("experimento_id", "")
+
+                    // Logica de reseteo si el experimento cambia
+                    if (experimentoServidor != experimentoActual) {
+                        experimentoActual = experimentoServidor
+                        rondaCompletada = 0 // Borramos la memoria de rondas del experimento anterior
+                    }
 
                     if (rondaServidor > rondaCompletada) {
-                        actualizarPantalla("¡Ronda $rondaServidor! Descargando modelo...")
+                        actualizarPantalla("¡Ronda $rondaServidor! Descargando modelo global...")
 
                         // 2. Descargar modelo (/model/download)
                         val reqDownload = Request.Builder().url("http://10.0.2.2:8000/model/download").build()
@@ -97,14 +120,61 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                         fos.write(respDownload.body?.bytes() ?: byteArrayOf())
                         fos.close()
 
-                        actualizarPantalla("Modelo guardado. Simulando entrenamiento...")
+                        actualizarPantalla("Modelo guardado. Iniciando LiteRT...")
 
-                        // Simulamos que entrenamos esperando 3seg
-                        delay(3000)
+                        // 3. Entrenamiento Real en on-device con TFLite
 
-                        // 3. Subir modelo (/model/upload)
-                        actualizarPantalla("Enviando resultados al servidor...")
+                        // Cargamos el modelo TFLite de la carpeta assets
+                        val tfliteBuffer = cargarModeloDesdeAssets(context, "modelo_entrenable.tflite")
+                        val interpreter = Interpreter(tfliteBuffer)
 
+                        // -----------------------------------------------------------------------
+                        // INICIALIZAR MEMORIA (Firma 'restore')
+                        actualizarPantalla("Asignando memoria interna...")
+                        val pesos0 = Array(784) { FloatArray(128) { (Math.random() * 0.01).toFloat() } }
+                        val sesgos0 = FloatArray(128) { 0f }
+                        val pesos1 = Array(128) { FloatArray(10) { (Math.random() * 0.01).toFloat() } }
+                        val sesgos1 = FloatArray(10) { 0f }
+
+                        val entradasRestore = mapOf("p0" to pesos0, "s0" to sesgos0, "p1" to pesos1, "s1" to sesgos1)
+                        val salidasRestore = mapOf("status" to FloatArray(1)) // Recibimos el 1.0 de Python
+                        interpreter.runSignature(entradasRestore, salidasRestore, "restore")
+                        // -----------------------------------------------------------------------
+
+                        // Generamos 100 imagenes y etiquetas aleatorias para entrenar
+                        val datosX = Array(100) {FloatArray(784) {Math.random().toFloat()}}
+                        val datosY = IntArray(100) {(Math.random() * 10).toInt()}
+
+                        // Preparamos las variables de entrada/salida para la signature "train"
+                        val entradasEntrenamiento = mapOf("x" to datosX, "y" to datosY)
+                        val valorLoss = FloatArray(1)
+                        val salidasEntrenamiento = mapOf("loss" to valorLoss)
+
+                        // Bucle de entrenamiento usando las epochs del servidor
+                        for (epoch in 1..epochsLocales) {
+                            interpreter.runSignature(entradasEntrenamiento, salidasEntrenamiento, "train")
+                            actualizarPantalla("Epoch $epoch | Error (Loss): ${String.format("%.4f", valorLoss[0])}")
+                            delay(500) // Pausa para que se vea el progreso en pantalla
+                        }
+
+                        // Extraemos los nuevos pesos
+                        actualizarPantalla("Extrayendo pesos actualizados...")
+                        //val entradasGuardar = emptyMap<String, Any>()
+                        val entradasGuardar = mapOf("x" to datosX) // Usamos nuestras imágenes como señuelo legal
+                        val entradaDummy = mapOf("dummy" to FloatArray(1) {0f})
+                        val salidasGuardar = mapOf(
+                            "pesos_0" to Array(784) { FloatArray(128) },
+                            "sesgos_0" to FloatArray(128),
+                            "pesos_1" to Array(128) { FloatArray(10) },
+                            "sesgos_1" to FloatArray(10)
+                        )
+                        //interpreter.runSignature(entradasGuardar, salidasGuardar, "save")
+                        interpreter.runSignature(entradaDummy, salidasGuardar, "save") // Pasamos el dummy en vez del emptyMap
+                        interpreter.close() // Cerramos para no saturar la RAM del móvil
+
+                        // 4. Subir modelo (/model/upload)
+                        actualizarPantalla("Entrenamiento Finalizado. Enviando resultados al servidor...")
+                        /*
                         val fileBody = archivoLocal.asRequestBody("application/octet-stream".toMediaTypeOrNull())
 
                         // Preparamos el Formulario Multiparte con los metadatos exigidos por el servidor
@@ -122,10 +192,16 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                             .build()
 
                         val respUpload = cliente.newCall(reqUpload).execute()
+
                         if (respUpload.isSuccessful) {
                             rondaCompletada = rondaServidor
+                            delay(2000)
                             actualizarPantalla("Ronda $rondaServidor completada. Esperando la siguiente...")
                         }
+                        */
+                        rondaCompletada = rondaServidor
+                        delay(2000)
+                        actualizarPantalla("Ronda $rondaServidor completada. Esperando la siguiente...")
                     }
                 }
             } catch (e: Exception) {

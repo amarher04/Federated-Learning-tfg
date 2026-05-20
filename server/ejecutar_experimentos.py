@@ -4,7 +4,7 @@ import time
 URL_SERVIDOR = "http://127.0.0.1:8000"
 RONDAS_POR_EXPERIMENTO = 5
 
-lista_epochs_a_probar = [1, 3, 5, 10]
+lista_epochs_a_probar = [3]
 
 print("Iniciando Bateria de Experimentos Automatizados...\n")
 
@@ -38,6 +38,6 @@ for epochs in lista_epochs_a_probar:
         print(f"Monitor: Esperando... El servidor esta en la ronda {ronda_actual} de {RONDAS_POR_EXPERIMENTO}.")
         time.sleep(5)  # Esperar 5 segundos antes de preguntar de nuevo
         
-    print("\n TODOS LOS EXPERIMENTOS HAN FINALIZADO. Revisa el archivo CSV con los resultados. \n")
+print("\n TODOS LOS EXPERIMENTOS HAN FINALIZADO. Revisa el archivo CSV con los resultados. \n")
         
         

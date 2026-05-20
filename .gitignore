@@ -15,6 +15,7 @@ __pycache__/
 # Archivos de datos y modelos
 *.csv
 *.npz
+*.tflite
 
 # =========================
 # ANDROID (Cliente Kotlin)

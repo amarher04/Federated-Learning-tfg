@@ -43,7 +43,7 @@ estado_servidor = {
     "ronda_actual": 1,
     "rondas_objetivo": 0, # Usamos como flag para saber si hay un experimento en curso o no (Si es 0, no hay experimento iniciado, servidor en reposo)
     "epochs_locales": 3,
-    "clientes_esperados": 2,
+    "clientes_esperados": 1,
     "metadatos_recibidos": [] # Guardara diccionarios con info de cada cliente (id, accuracy_local, etc)
 }
 

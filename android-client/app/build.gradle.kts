@@ -21,6 +21,11 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // No comprimir archivos .tflite al empaquetar la app
+    androidResources {
+        noCompress += "tflite"
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -58,4 +63,8 @@ dependencies {
 
     // Libreria para hacer llamadas HTTP (API REST)
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // Libreria TensorFlow Lite para Android
+    implementation("org.tensorflow:tensorflow-lite:2.16.1")
+    implementation("org.tensorflow:tensorflow-lite-select-tf-ops:2.16.1") // soportar operaciones de entrenamiento (Flex)
 }
