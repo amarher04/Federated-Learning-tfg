@@ -101,80 +101,118 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                     // Leemos el ID del experimento del Servidor
                     val experimentoServidor = json.optString("experimento_id", "")
 
-                    // Logica de reseteo si el experimento cambia
-                    if (experimentoServidor != experimentoActual) {
-                        experimentoActual = experimentoServidor
-                        rondaCompletada = 0 // Borramos la memoria de rondas del experimento anterior
-                    }
+                    // Leemos la variable que indica si hay un experimento activo
+                    val rondasObjetivo = json.optInt("rondas_objetivo", -1)
 
-                    if (rondaServidor > rondaCompletada) {
-                        actualizarPantalla("¡Ronda $rondaServidor! Descargando modelo global...")
-
-                        // 2. Descargar modelo (/model/download)
-                        val reqDownload = Request.Builder().url("http://10.0.2.2:8000/model/download").build()
-                        val respDownload = cliente.newCall(reqDownload).execute()
-
-                        // Guardamos el archivo binario en el almacenamiento interno privado de la app
-                        val archivoLocal = File(context.filesDir, "modelo_android.npz")
-                        val fos = FileOutputStream(archivoLocal)
-                        fos.write(respDownload.body?.bytes() ?: byteArrayOf())
-                        fos.close()
-
-                        actualizarPantalla("Modelo guardado. Iniciando LiteRT...")
-
-                        // 3. Entrenamiento Real en on-device con TFLite
-
-                        // Cargamos el modelo TFLite de la carpeta assets
-                        val tfliteBuffer = cargarModeloDesdeAssets(context, "modelo_entrenable.tflite")
-                        val interpreter = Interpreter(tfliteBuffer)
-
-                        // -----------------------------------------------------------------------
-                        // INICIALIZAR MEMORIA (Firma 'restore')
-                        actualizarPantalla("Asignando memoria interna...")
-                        val pesos0 = Array(784) { FloatArray(128) { (Math.random() * 0.01).toFloat() } }
-                        val sesgos0 = FloatArray(128) { 0f }
-                        val pesos1 = Array(128) { FloatArray(10) { (Math.random() * 0.01).toFloat() } }
-                        val sesgos1 = FloatArray(10) { 0f }
-
-                        val entradasRestore = mapOf("p0" to pesos0, "s0" to sesgos0, "p1" to pesos1, "s1" to sesgos1)
-                        val salidasRestore = mapOf("status" to FloatArray(1)) // Recibimos el 1.0 de Python
-                        interpreter.runSignature(entradasRestore, salidasRestore, "restore")
-                        // -----------------------------------------------------------------------
-
-                        // Generamos 100 imagenes y etiquetas aleatorias para entrenar
-                        val datosX = Array(100) {FloatArray(784) {Math.random().toFloat()}}
-                        val datosY = IntArray(100) {(Math.random() * 10).toInt()}
-
-                        // Preparamos las variables de entrada/salida para la signature "train"
-                        val entradasEntrenamiento = mapOf("x" to datosX, "y" to datosY)
-                        val valorLoss = FloatArray(1)
-                        val salidasEntrenamiento = mapOf("loss" to valorLoss)
-
-                        // Bucle de entrenamiento usando las epochs del servidor
-                        for (epoch in 1..epochsLocales) {
-                            interpreter.runSignature(entradasEntrenamiento, salidasEntrenamiento, "train")
-                            actualizarPantalla("Epoch $epoch | Error (Loss): ${String.format("%.4f", valorLoss[0])}")
-                            delay(500) // Pausa para que se vea el progreso en pantalla
+                    if (rondasObjetivo == 0) {
+                        actualizarPantalla("Experimento finalizado. Cliente en estado de reposo...")
+                        // El código no entra a descargar nada. Al terminar el if,
+                        // esperará 3 segundos y volverá a preguntar silenciosamente.
+                    } else {
+                        // Logica de reseteo si el experimento cambia
+                        if (experimentoServidor != experimentoActual) {
+                            experimentoActual = experimentoServidor
+                            rondaCompletada = 0 // Borramos la memoria de rondas del experimento anterior
+                            actualizarPantalla("Nuevo experimento detectado. Preparando cliente...")
+                            delay(1500)
                         }
 
-                        // Extraemos los nuevos pesos
-                        actualizarPantalla("Extrayendo pesos actualizados...")
-                        //val entradasGuardar = emptyMap<String, Any>()
-                        val entradasGuardar = mapOf("x" to datosX) // Usamos nuestras imágenes como señuelo legal
-                        val entradaDummy = mapOf("dummy" to FloatArray(1) {0f})
-                        val salidasGuardar = mapOf(
-                            "pesos_0" to Array(784) { FloatArray(128) },
-                            "sesgos_0" to FloatArray(128),
-                            "pesos_1" to Array(128) { FloatArray(10) },
-                            "sesgos_1" to FloatArray(10)
-                        )
-                        //interpreter.runSignature(entradasGuardar, salidasGuardar, "save")
-                        interpreter.runSignature(entradaDummy, salidasGuardar, "save") // Pasamos el dummy en vez del emptyMap
-                        interpreter.close() // Cerramos para no saturar la RAM del móvil
+                        if (rondaServidor > rondaCompletada) {
+                            if (rondaServidor <= rondasObjetivo) {
 
-                        // 4. Subir modelo (/model/upload)
-                        actualizarPantalla("Entrenamiento Finalizado. Enviando resultados al servidor...")
-                        /*
+                                actualizarPantalla("¡Ronda $rondaServidor de $rondasObjetivo! Descargando modelo global...")
+
+                                // 2. Descargar modelo (/model/download)
+                                val reqDownload =
+                                    Request.Builder().url("http://10.0.2.2:8000/model/download")
+                                        .build()
+                                val respDownload = cliente.newCall(reqDownload).execute()
+
+                                // Guardamos el archivo binario en el almacenamiento interno privado de la app
+                                val archivoLocal = File(context.filesDir, "modelo_android.npz")
+                                val fos = FileOutputStream(archivoLocal)
+                                fos.write(respDownload.body?.bytes() ?: byteArrayOf())
+                                fos.close()
+
+                                actualizarPantalla("Modelo guardado. Iniciando LiteRT...")
+
+                                // 3. Entrenamiento Real en on-device con TFLite
+
+                                // Cargamos el modelo TFLite de la carpeta assets
+                                val tfliteBuffer =
+                                    cargarModeloDesdeAssets(context, "modelo_entrenable.tflite")
+                                val interpreter = Interpreter(tfliteBuffer)
+
+                                // -----------------------------------------------------------------------
+                                // INICIALIZAR MEMORIA (Firma 'restore')
+                                actualizarPantalla("Asignando memoria interna...")
+                                val pesos0 =
+                                    Array(784) { FloatArray(128) { (Math.random() * 0.01).toFloat() } }
+                                val sesgos0 = FloatArray(128) { 0f }
+                                val pesos1 =
+                                    Array(128) { FloatArray(10) { (Math.random() * 0.01).toFloat() } }
+                                val sesgos1 = FloatArray(10) { 0f }
+
+                                val entradasRestore = mapOf(
+                                    "p0" to pesos0,
+                                    "s0" to sesgos0,
+                                    "p1" to pesos1,
+                                    "s1" to sesgos1
+                                )
+                                val salidasRestore =
+                                    mapOf("status" to FloatArray(1)) // Recibimos el 1.0 de Python
+                                interpreter.runSignature(entradasRestore, salidasRestore, "restore")
+                                // -----------------------------------------------------------------------
+
+                                // Generamos 100 imagenes y etiquetas aleatorias para entrenar
+                                val datosX =
+                                    Array(100) { FloatArray(784) { Math.random().toFloat() } }
+                                val datosY = IntArray(100) { (Math.random() * 10).toInt() }
+
+                                // Preparamos las variables de entrada/salida para la signature "train"
+                                val entradasEntrenamiento = mapOf("x" to datosX, "y" to datosY)
+                                val valorLoss = FloatArray(1)
+                                val salidasEntrenamiento = mapOf("loss" to valorLoss)
+
+                                // Bucle de entrenamiento usando las epochs del servidor
+                                for (epoch in 1..epochsLocales) {
+                                    interpreter.runSignature(
+                                        entradasEntrenamiento,
+                                        salidasEntrenamiento,
+                                        "train"
+                                    )
+                                    actualizarPantalla(
+                                        "Epoch $epoch | Error (Loss): ${
+                                            String.format("%.4f", valorLoss[0])
+                                        }"
+                                    )
+                                    delay(500) // Pausa para que se vea el progreso en pantalla
+                                }
+
+                                // Extraemos los nuevos pesos
+                                actualizarPantalla("Extrayendo pesos actualizados...")
+                                //val entradasGuardar = emptyMap<String, Any>()
+                                //val entradasGuardar = mapOf("x" to datosX) // Usamos nuestras imágenes como señuelo legal
+                                //val entradaDummy = mapOf("dummy" to FloatArray(1) {0f})
+                                val entradaDummy = mapOf("dummy" to floatArrayOf(0.0f))
+
+                                val salidasGuardar = mapOf(
+                                    "pesos_0" to Array(784) { FloatArray(128) },
+                                    "sesgos_0" to FloatArray(128),
+                                    "pesos_1" to Array(128) { FloatArray(10) },
+                                    "sesgos_1" to FloatArray(10)
+                                )
+                                //interpreter.runSignature(entradasGuardar, salidasGuardar, "save")
+                                interpreter.runSignature(
+                                    entradaDummy,
+                                    salidasGuardar,
+                                    "save"
+                                ) // Pasamos el dummy en vez del emptyMap
+                                interpreter.close() // Cerramos para no saturar la RAM del móvil
+
+                                // 4. Subir modelo (/model/upload)
+                                actualizarPantalla("Entrenamiento Finalizado. Enviando resultados al servidor...")
+                                /*
                         val fileBody = archivoLocal.asRequestBody("application/octet-stream".toMediaTypeOrNull())
 
                         // Preparamos el Formulario Multiparte con los metadatos exigidos por el servidor
@@ -199,9 +237,22 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                             actualizarPantalla("Ronda $rondaServidor completada. Esperando la siguiente...")
                         }
                         */
-                        rondaCompletada = rondaServidor
-                        delay(2000)
-                        actualizarPantalla("Ronda $rondaServidor completada. Esperando la siguiente...")
+                                rondaCompletada = rondaServidor
+                                delay(2000)
+
+                                if (rondaServidor == rondasObjetivo) {
+                                    actualizarPantalla("¡Experimento completado con éxito! (Total: $rondasObjetivo rondas)")
+                                } else {
+                                    actualizarPantalla("Ronda $rondaServidor/$rondasObjetivo completada. Esperando la siguiente...")
+                                }
+                            } // Si el servidor envía una ronda mayor al objetivo (ej. 6/5)
+                            else {
+                                // Aseguramos que la pantalla siga mostrando el mensaje de éxito
+                                // y evitamos que haga falsos entrenamientos.
+                                actualizarPantalla("¡Experimento completado con éxito! (Total: $rondasObjetivo rondas)")
+                                rondaCompletada = rondaServidor // Lo igualamos para que no vuelva a entrar al IF
+                            }
+                        }
                     }
                 }
             } catch (e: Exception) {
