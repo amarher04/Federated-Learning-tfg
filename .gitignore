@@ -1,35 +1,66 @@
 # =========================
-# PYTHON (Servidor)
+# Android & Gradle
 # =========================
-# Entornos virtuales
+*.apk
+*.ap_
+*.aab
+*.dex
+*.class
+/build/
+*/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+.gradle/
+local.properties
+
+
+
+# =========================
+# Python & Servidor
+# =========================
 venv/
 env/
-.env
-
-# Archivos compilados y caché
+.venv/
 __pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
 *.py[cod]
 *$py.class
-.pytest_cache/
+.env
 
-# Archivos de datos y modelos
+# =========================
+# Machine Learning (Datos y Modelos)
+# =========================
+# Ignorar carpetas de datasets
+/data/
+/datasets/
 *.csv
 *.npz
 *.tflite
+*.tfrecord
+
+# Ignorar modelos pesados
+*.pt
+*.pth
+*.h5
+*.ckpt
+*.pb
+
+# Ignorar logs de entrenamiento
+/logs/
+/runs/
 
 # =========================
-# ANDROID (Cliente Kotlin)
+# IDEs y SO
 # =========================
-# Carpetas de compilación
-build/
-android-client/app/build/
-android-client/.gradle/
-
-# Archivos locales de Android Studio
-local.properties
 .idea/
 *.iml
-
-# Archivos del sistema operativo (Mac/Windows)
+.vscode/
 .DS_Store
 Thumbs.db
+
+# Claves de firma (¡Seguridad!)
+*.keystore
+*.jks
