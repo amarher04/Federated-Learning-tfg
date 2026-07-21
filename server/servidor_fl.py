@@ -39,7 +39,7 @@ np.savez("modelo_global.npz", *modelo_global.get_weights())
 
 # 2. ESTADO DEL SERVIDOR
 estado_servidor = {
-    "experimento_id": f"EXP_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # ID único para cada ejecución del servidor basado en la fecha y hora de inicio
+    "experimento_id": f"EXP_{datetime.now().strftime('%Y%m%d_%H%M%S')}", # ID único para cada ejecución del servidor basado en la fecha y hora de inicio.
     "ronda_actual": 1,
     "rondas_objetivo": 0, # Usamos como flag para saber si hay un experimento en curso o no (Si es 0, no hay experimento iniciado, servidor en reposo)
     "epochs_locales": 3,
