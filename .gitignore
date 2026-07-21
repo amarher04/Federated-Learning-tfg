@@ -22,13 +22,13 @@ local.properties
 venv/
 env/
 .venv/
+.env
 __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
 *.py[cod]
 *$py.class
-.env
 server/modelo_temporal/
 
 # =========================
