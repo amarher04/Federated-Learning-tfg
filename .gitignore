@@ -29,6 +29,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .env
+server/modelo_temporal/
 
 # =========================
 # Machine Learning (Datos y Modelos)
