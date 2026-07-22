@@ -43,7 +43,7 @@ estado_servidor = {
     "ronda_actual": 1,
     "rondas_objetivo": 0, # Usamos como flag para saber si hay un experimento en curso o no (Si es 0, no hay experimento iniciado, servidor en reposo)
     "epochs_locales": 3,
-    "clientes_esperados": 1,
+    "clientes_esperados": 2,  # Número de clientes que esperamos recibir en cada ronda
     "metadatos_recibidos": [] # Guardara diccionarios con info de cada cliente (id, accuracy_local, etc)
 }
 
@@ -95,12 +95,30 @@ async def subir_pesos(
         
         todos_los_pesos_ponderados = []
         for meta in estado_servidor["metadatos_recibidos"]:
-            with np.load(meta["ruta"]) as datos_npz:
-                pesos_brutos = [datos_npz[f] for f in datos_npz.files]
-                # Ponderamos cada capa multiplicando los pesos de este cliente por (sus_muestras / muestras_totales)
-                factor_importancia = meta["muestras"] / float(muestras_totales)
-                pesos_ponderados = [capa * factor_importancia for capa in pesos_brutos]
-                todos_los_pesos_ponderados.append(pesos_ponderados)
+            # Identificamos el formato del cliente (ANDROID .bin o PYTHON .npz)
+            ruta_archivo = meta["ruta"]
+            
+            if ruta_archivo.endswith(".bin"):
+                # Lógica para cliente ANDROID
+                with open(ruta_archivo, "rb") as f:
+                    datos = np.fromfile(f, dtype=np.float32)
+                    
+                # Reconstruimos la geometría de las 4 capas de la red
+                w1 = datos[0 : 100352].reshape(784, 128)
+                b1 = datos[100352 : 100480]
+                w2 = datos[100480 : 101760].reshape(128, 10)
+                b2 = datos[101760 : 101770]
+                pesos_brutos = [w1, b1, w2, b2]
+            
+            else:
+                # Lógica para cliente PYTHON (.npz)
+                with np.load(ruta_archivo) as datos_npz:
+                    pesos_brutos = [datos_npz[f] for f in datos_npz.files]
+            
+            # Ponderamos cada capa
+            factor_importancia = meta["muestras"] / float(muestras_totales)
+            pesos_ponderados = [capa * factor_importancia for capa in pesos_brutos]
+            todos_los_pesos_ponderados.append(pesos_ponderados)
         
         # 2. Sumar los pesos ponderados de todos los clientes para cada capa
         nuevos_pesos_globales = []

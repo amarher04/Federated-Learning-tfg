@@ -16,6 +16,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -24,6 +26,9 @@ import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
 // Añadimos libreria TensorFlow Lite
 import org.tensorflow.lite.Interpreter
+
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,6 +45,23 @@ fun cargarModeloDesdeAssets(context: Context, nombreArchivo: String): MappedByte
     val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
     val fileChannel = inputStream.channel
     return fileChannel.map(FileChannel.MapMode.READ_ONLY, fileDescriptor.startOffset, fileDescriptor.declaredLength)
+}
+
+// FUNCIÓN PUENTE: Convierte la memoria RAM a Binario Puro
+fun guardarPesosBinario(archivo: File, pesos0: Array<FloatArray>, sesgos0: FloatArray, pesos1: Array<FloatArray>, sesgos1: FloatArray) {
+    // Calculamos el total de números flotantes (784x128 + 128 + 128x10 + 10 = 101770)
+    val totalFloats = (784 * 128) + 128 + (128 * 10) + 10
+    val buffer = ByteBuffer.allocate(totalFloats * 4) // 4 bytes por cada Float
+    buffer.order(ByteOrder.LITTLE_ENDIAN) // Formato Little Endian para que Python lo lea correctamente
+
+    for (fila in pesos0) for (v in fila) buffer.putFloat(v)
+    for (v in sesgos0) buffer.putFloat(v)
+    for (fila in pesos1) for (v in fila) buffer.putFloat(v)
+    for (v in sesgos1) buffer.putFloat(v)
+
+    val fos = FileOutputStream(archivo)
+    fos.write(buffer.array())
+    fos.close()
 }
 
 @Composable
@@ -88,7 +110,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
 
         while (true) {
             try {
-                // 1. Preguntar al servidor (/config)
+                // 1. PREGUNTAR AL SERVIDOR (/config)
                 val reqConfig = Request.Builder().url("http://10.0.2.2:8000/config").build()
                 val respConfig = cliente.newCall(reqConfig).execute()
 
@@ -122,7 +144,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
 
                                 actualizarPantalla("¡Ronda $rondaServidor de $rondasObjetivo! Descargando modelo global...")
 
-                                // 2. Descargar modelo (/model/download)
+                                // 2. DESCARGAR MODELO (/model/download)
                                 val reqDownload =
                                     Request.Builder().url("http://10.0.2.2:8000/model/download")
                                         .build()
@@ -136,7 +158,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
 
                                 actualizarPantalla("Modelo guardado. Iniciando LiteRT...")
 
-                                // 3. Entrenamiento Real en on-device con TFLite
+                                // 3. ENTRENAMIENTO REAL EN ON-DEVICE CON TFLite
 
                                 // Cargamos el modelo TFLite de la carpeta assets
                                 val tfliteBuffer =
@@ -210,41 +232,51 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                 ) // Pasamos el dummy en vez del emptyMap
                                 interpreter.close() // Cerramos para no saturar la RAM del móvil
 
-                                // 4. Subir modelo (/model/upload)
+                                // 4. SUBIR MODELO (/model/upload)
                                 actualizarPantalla("Entrenamiento Finalizado. Enviando resultados al servidor...")
-                                /*
-                        val fileBody = archivoLocal.asRequestBody("application/octet-stream".toMediaTypeOrNull())
 
-                        // Preparamos el Formulario Multiparte con los metadatos exigidos por el servidor
-                        val multipartBody = MultipartBody.Builder()
-                            .setType(MultipartBody.FORM)
-                            .addFormDataPart("cliente_id", "Android_1")
-                            .addFormDataPart("num_muestras", "1500") // Muestras falsas
-                            .addFormDataPart("ronda_cliente", rondaServidor.toString())
-                            .addFormDataPart("file", "pesos_android.npz", fileBody)
-                            .build()
+                                // Creamos el archivo puente
+                                val archivoPesos = File(context.filesDir, "pesos_entrenados.bin")
+                                guardarPesosBinario(
+                                    archivoPesos,
+                                    salidasGuardar["pesos_0"] as Array<FloatArray>,
+                                    salidasGuardar["sesgos_0"] as FloatArray,
+                                    salidasGuardar["pesos_1"] as Array<FloatArray>,
+                                    salidasGuardar["sesgos_1"] as FloatArray
+                                )
 
-                        val reqUpload = Request.Builder()
-                            .url("http://10.0.2.2:8000/model/upload")
-                            .post(multipartBody)
-                            .build()
+                                val fileBody = archivoPesos.asRequestBody("application/octet-stream".toMediaTypeOrNull())
 
-                        val respUpload = cliente.newCall(reqUpload).execute()
+                                // Preparamos el Formulario Multiparte con los metadatos exigidos por el servidor
+                                val multipartBody = MultipartBody.Builder()
+                                    .setType(MultipartBody.FORM)
+                                    .addFormDataPart("cliente_id", "Android_1")
+                                    .addFormDataPart("num_muestras", "100") // Las 100 de tu batch
+                                    .addFormDataPart("ronda_cliente", rondaServidor.toString())
+                                    .addFormDataPart("file", "pesos_entrenados.bin", fileBody) // Enviamos el .bin
+                                    .build()
 
-                        if (respUpload.isSuccessful) {
-                            rondaCompletada = rondaServidor
-                            delay(2000)
-                            actualizarPantalla("Ronda $rondaServidor completada. Esperando la siguiente...")
-                        }
-                        */
-                                rondaCompletada = rondaServidor
-                                delay(2000)
+                                val reqUpload = Request.Builder()
+                                    .url("http://10.0.2.2:8000/model/upload")
+                                    .post(multipartBody)
+                                    .build()
 
-                                if (rondaServidor == rondasObjetivo) {
-                                    actualizarPantalla("¡Experimento completado con éxito! (Total: $rondasObjetivo rondas)")
+                                val respUpload = cliente.newCall(reqUpload).execute()
+
+                                if (respUpload.isSuccessful) {
+                                    rondaCompletada = rondaServidor
+                                    delay(2000)
+
+                                    if (rondaServidor == rondasObjetivo) {
+                                        actualizarPantalla("¡Experimento completado con éxito! (Total: $rondasObjetivo rondas)")
+                                    } else {
+                                        actualizarPantalla("Ronda $rondaServidor/$rondasObjetivo completada. Esperando la siguiente...")
+                                    }
                                 } else {
-                                    actualizarPantalla("Ronda $rondaServidor/$rondasObjetivo completada. Esperando la siguiente...")
+                                    // Si falla la subida, no actualizamos rondaCompletada para poder reintentar
+                                    actualizarPantalla("Error al enviar modelo al servidor. Código: ${respUpload.code}")
                                 }
+
                             } // Si el servidor envía una ronda mayor al objetivo (ej. 6/5)
                             else {
                                 // Aseguramos que la pantalla siga mostrando el mensaje de éxito
