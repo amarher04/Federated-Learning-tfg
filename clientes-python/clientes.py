@@ -24,8 +24,10 @@ def ejecutar_cliente_autonomo(id_cliente):
     # Preparar datos fijos para este cliente
     (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
     x_train = x_train / 255.0
-    mitad = len(x_train) // 2
-    x_local, y_local = (x_train[:mitad], y_train[:mitad]) if id_cliente == "1" else (x_train[mitad:], y_train[mitad:])
+    #mitad = len(x_train) // 2
+    #x_local, y_local = (x_train[:mitad], y_train[:mitad]) if id_cliente == "1" else (x_train[mitad:], y_train[mitad:])
+    #num_muestras_locales = len(x_local)
+    x_local, y_local = x_train[100:200], y_train[100:200]
     num_muestras_locales = len(x_local)
     modelo = crear_modelo()
     

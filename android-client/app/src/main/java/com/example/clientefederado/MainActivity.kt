@@ -145,13 +145,11 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                 actualizarPantalla("¡Ronda $rondaServidor de $rondasObjetivo! Descargando modelo global...")
 
                                 // 2. DESCARGAR MODELO (/model/download)
-                                val reqDownload =
-                                    Request.Builder().url("http://10.0.2.2:8000/model/download")
-                                        .build()
+                                val reqDownload = Request.Builder().url("http://10.0.2.2:8000/model/download/bin").build()
                                 val respDownload = cliente.newCall(reqDownload).execute()
 
                                 // Guardamos el archivo binario en el almacenamiento interno privado de la app
-                                val archivoLocal = File(context.filesDir, "modelo_android.npz")
+                                val archivoLocal = File(context.filesDir, "modelo_global.bin")
                                 val fos = FileOutputStream(archivoLocal)
                                 fos.write(respDownload.body?.bytes() ?: byteArrayOf())
                                 fos.close()
@@ -161,19 +159,19 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                 // 3. ENTRENAMIENTO REAL EN ON-DEVICE CON TFLite
 
                                 // Cargamos el modelo TFLite de la carpeta assets
-                                val tfliteBuffer =
-                                    cargarModeloDesdeAssets(context, "modelo_entrenable.tflite")
+                                val tfliteBuffer = cargarModeloDesdeAssets(context, "modelo_entrenable.tflite")
                                 val interpreter = Interpreter(tfliteBuffer)
 
                                 // -----------------------------------------------------------------------
                                 // INICIALIZAR MEMORIA (Firma 'restore')
                                 actualizarPantalla("Asignando memoria interna...")
-                                val pesos0 =
-                                    Array(784) { FloatArray(128) { (Math.random() * 0.01).toFloat() } }
-                                val sesgos0 = FloatArray(128) { 0f }
-                                val pesos1 =
-                                    Array(128) { FloatArray(10) { (Math.random() * 0.01).toFloat() } }
-                                val sesgos1 = FloatArray(10) { 0f }
+                                val bytesModelo = archivoLocal.readBytes()
+                                val bufferModelo = ByteBuffer.wrap(bytesModelo).order(ByteOrder.LITTLE_ENDIAN)
+
+                                val pesos0 = Array(784) { FloatArray(128) { bufferModelo.float } }
+                                val sesgos0 = FloatArray(128) { bufferModelo.float }
+                                val pesos1 = Array(128) { FloatArray(10) { bufferModelo.float } }
+                                val sesgos1 = FloatArray(10) { bufferModelo.float }
 
                                 val entradasRestore = mapOf(
                                     "p0" to pesos0,
@@ -181,15 +179,22 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                     "p1" to pesos1,
                                     "s1" to sesgos1
                                 )
-                                val salidasRestore =
-                                    mapOf("status" to FloatArray(1)) // Recibimos el 1.0 de Python
+                                val salidasRestore = mapOf("status" to FloatArray(1)) // Recibimos el 1.0 de Python
                                 interpreter.runSignature(entradasRestore, salidasRestore, "restore")
                                 // -----------------------------------------------------------------------
 
-                                // Generamos 100 imagenes y etiquetas aleatorias para entrenar
-                                val datosX =
-                                    Array(100) { FloatArray(784) { Math.random().toFloat() } }
-                                val datosY = IntArray(100) { (Math.random() * 10).toInt() }
+                                // CARGAR DATOS REALES DE MNIST DESDE ASSETS
+                                actualizarPantalla("Cargando dataset local MNIST...")
+                                val isX = context.assets.open("mnist_x.bin")
+                                val bufferX = ByteBuffer.wrap(isX.readBytes()).order(ByteOrder.LITTLE_ENDIAN)
+                                val datosX = Array(100) { FloatArray(784) { bufferX.float } }
+                                isX.close()
+
+                                val isY = context.assets.open("mnist_y.bin")
+                                val bufferY = ByteBuffer.wrap(isY.readBytes()).order(ByteOrder.LITTLE_ENDIAN)
+                                val datosY = IntArray(100) { bufferY.int }
+                                isY.close()
+                                // -----------------------------------------------------------------------
 
                                 // Preparamos las variables de entrada/salida para la signature "train"
                                 val entradasEntrenamiento = mapOf("x" to datosX, "y" to datosY)
@@ -198,17 +203,9 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
 
                                 // Bucle de entrenamiento usando las epochs del servidor
                                 for (epoch in 1..epochsLocales) {
-                                    interpreter.runSignature(
-                                        entradasEntrenamiento,
-                                        salidasEntrenamiento,
-                                        "train"
-                                    )
-                                    actualizarPantalla(
-                                        "Epoch $epoch | Error (Loss): ${
-                                            String.format("%.4f", valorLoss[0])
-                                        }"
-                                    )
-                                    delay(500) // Pausa para que se vea el progreso en pantalla
+                                    interpreter.runSignature(entradasEntrenamiento, salidasEntrenamiento, "train")
+                                    actualizarPantalla("Epoch $epoch | Error (Loss): ${String.format("%.4f", valorLoss[0])}")
+                                    delay(500)
                                 }
 
                                 // Extraemos los nuevos pesos

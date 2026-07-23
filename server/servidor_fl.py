@@ -34,8 +34,14 @@ def crear_modelo():
     modelo.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     return modelo
 
+def guardar_modelo_binario(pesos, ruta="modelo_global.bin"):
+    with open(ruta, "wb") as f:
+        for capa in pesos:
+            f.write(capa.astype(np.float32).tobytes())
+
 modelo_global = crear_modelo()
 np.savez("modelo_global.npz", *modelo_global.get_weights())
+guardar_modelo_binario(modelo_global.get_weights())
 
 # 2. ESTADO DEL SERVIDOR
 estado_servidor = {
@@ -48,11 +54,11 @@ estado_servidor = {
 }
 
 # 3. ENDPOINTS (GET /config, GET /model/download, POST /model/upload)
-@app.get("/config")
+@app.get("/config")  # Endpoint para obtener configuración actual del servidor
 def obtener_configuracion():
     return estado_servidor
 
-@app.get("/model/download")
+@app.get("/model/download")  # Endpoint para descargar modelo .npz (Python)
 def descargar_modelo():
     ruta_archivo = "modelo_global.npz"
     if os.path.exists(ruta_archivo):
@@ -60,7 +66,13 @@ def descargar_modelo():
     else:
         return {"error": "Modelo global no encontrado"}
 
-@app.post("/model/upload")
+@app.get("/model/download/bin")  # Endpoint para descargar modelo .bin (Android)
+def descargar_modelo_bin():
+    if os.path.exists("modelo_global.bin"):
+        return FileResponse("modelo_global.bin", media_type="application/octet-stream", filename="modelo_global.bin")
+    return {"error": "Modelo binario no encontrado"}
+
+@app.post("/model/upload")  # Endpoint para subir modelo .npz (Python)
 async def subir_pesos(
     file: UploadFile = File(...),   # METADATO 1
     cliente_id: str = Form(...),    # METADATO 2
@@ -155,6 +167,7 @@ async def subir_pesos(
         
         # 4. Guardar nuevo modelo global actualizado, Limpiar y Avanzar ronda
         np.savez("modelo_global.npz", *nuevos_pesos_globales)
+        guardar_modelo_binario(nuevos_pesos_globales)
         for meta in estado_servidor["metadatos_recibidos"]:
             os.remove(meta["ruta"])
         estado_servidor["metadatos_recibidos"].clear()
@@ -167,12 +180,13 @@ class NuevaConfiguracion(BaseModel):
     epochs_locales: int
     rondas_objetivo: int  # El director nos dira cuantas rondas quiere que dure el experimento
 
-@app.post("/admin/configurar")
+@app.post("/admin/configurar")  # Endpoint para configurar el servidor (modo admin)
 def configurar_servidor(config: NuevaConfiguracion):
     
     # Reseteamos el estado del servidor para un nuevo experimento de cero
     modelo_nuevo = crear_modelo()
     np.savez("modelo_global.npz", *modelo_nuevo.get_weights())
+    guardar_modelo_binario(modelo_nuevo.get_weights())
     
     # Limpiar variables del servidor
     estado_servidor["epochs_locales"] = config.epochs_locales
