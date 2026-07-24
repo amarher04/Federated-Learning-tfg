@@ -33,8 +33,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 server/modelo_temporal/
-server/mnist_x.bin/
-server/mnist_y.bin/
+server/mnist_x.bin
+server/mnist_y.bin
 server/modelo_global.bin
 
 # =========================
