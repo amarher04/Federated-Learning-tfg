@@ -13,6 +13,9 @@
 .cxx/
 .gradle/
 local.properties
+android-client/app/src/main/assets/mnist_x.bin
+android-client/app/src/main/assets/mnist_y.bin
+android-client/app/src/main/assets/modelo_global.bin
 
 
 
@@ -30,6 +33,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 server/modelo_temporal/
+server/mnist_x.bin/
+server/mnist_y.bin/
+server/modelo_global.bin
 
 # =========================
 # Machine Learning (Datos y Modelos)
