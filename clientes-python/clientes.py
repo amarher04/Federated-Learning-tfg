@@ -70,7 +70,11 @@ def ejecutar_cliente_autonomo(id_cliente):
                     
                 # 2. Entrenar localmente
                 print(f"[Cliente {id_cliente}] Entrenando {config['epochs_locales']} epochs...\n")
+                
+                inicio_entrenamiento = time.time()
                 modelo.fit(x_local, y_local, epochs=config["epochs_locales"], verbose=0)
+                fin_entrenamiento = time.time()
+                tiempo_ent_local = fin_entrenamiento - inicio_entrenamiento
                 
                 # 3. Subir con metadatos (Formulario)
                 ruta_subida = f"modelo_subir_c{id_cliente}.npz"
@@ -79,7 +83,8 @@ def ejecutar_cliente_autonomo(id_cliente):
                 datos_formulario = {
                     "cliente_id": id_cliente,
                     "num_muestras": num_muestras_locales,
-                    "ronda_cliente": ronda_servidor
+                    "ronda_cliente": ronda_servidor,
+                    "tiempo_entrenamiento": tiempo_ent_local
                 }
                 archivos = {"file": (f"pesos_c{id_cliente}.npz", open(ruta_subida, "rb"), "application/octet-stream")}
                 

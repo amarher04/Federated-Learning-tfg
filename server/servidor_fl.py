@@ -7,6 +7,7 @@ import tensorflow as tf
 import csv
 from datetime import datetime
 from pydantic import BaseModel
+import time
 
 app = FastAPI(title="Servidor Aprendizaje Federado - V3")
 os.makedirs("modelos_clientes", exist_ok=True)
@@ -18,7 +19,7 @@ ARCHIVO_CSV = "resultados_experimentos.csv"
 if not os.path.exists(ARCHIVO_CSV):
     with open(ARCHIVO_CSV, mode='w', newline='') as archivo:
         writer = csv.writer(archivo)
-        writer.writerow(["Fecha", "Experimento_ID", "Ronda", "Epochs_Locales", "Muestras_Totales", "Accuracy", "Loss", "Trafico_Ronda_KB"])
+        writer.writerow(["Fecha", "Experimento_ID", "Ronda", "Epochs_Locales", "Muestras_Totales", "Accuracy", "Loss", "Trafico_Ronda_KB", "Tiempo_Ronda_Seg", "Espera_Rezagados_Seg", "Tiempo_Medio_Entrenamiento_Seg"])
 
 # 1. PREPARAR EVALUACIÓN DE MODELO GLOBAL
 print("Cargando datos de validación en el servidor...")
@@ -51,6 +52,7 @@ estado_servidor = {
     "epochs_locales": 3,
     "clientes_esperados": 2,  # Número de clientes que esperamos recibir en cada ronda
     "metadatos_recibidos": [] # Guardara diccionarios con info de cada cliente (id, accuracy_local, etc)
+    "tiempo_inicio_ronda": time.time() # para calcular el tiempo total de la ronda
 }
 
 # 3. ENDPOINTS (GET /config, GET /model/download, POST /model/upload)
@@ -74,10 +76,11 @@ def descargar_modelo_bin():
 
 @app.post("/model/upload")  # Endpoint para subir modelo .npz (Python)
 async def subir_pesos(
-    file: UploadFile = File(...),   # METADATO 1
-    cliente_id: str = Form(...),    # METADATO 2
-    num_muestras: int = Form(...),  # METADATO 3
-    ronda_cliente: int = Form(...)  # METADATO 4
+    file: UploadFile = File(...),           # METADATO 1
+    cliente_id: str = Form(...),            # METADATO 2
+    num_muestras: int = Form(...),          # METADATO 3
+    ronda_cliente: int = Form(...),         # METADATO 4
+    tiempo_entrenamiento: float = Form(...) # METADATO 5
 ):
     # Seguridad: Si un cliente va con retraso, ignoramos sus pesos
     if ronda_cliente != estado_servidor["ronda_actual"]:
@@ -93,7 +96,9 @@ async def subir_pesos(
         "id": cliente_id,
         "muestras": num_muestras,
         "ruta": ruta_guardado,
-        "trafico_kb": len(contenido) / 1024.0
+        "trafico_kb": len(contenido) / 1024.0,
+        "tiempo_entrenamiento": tiempo_entrenamiento,
+        "momento_llegada": time.time() # Registramos a qué hora exacta llego el cliente
     })
     
     print(f" Recibido Cliente {cliente_id} | Muestras: {num_muestras} | Ronda: {ronda_cliente} \n")
@@ -138,8 +143,19 @@ async def subir_pesos(
         for i in range(num_capas):
             capa_sumada = np.sum([cliente[i] for cliente in todos_los_pesos_ponderados], axis=0)
             nuevos_pesos_globales.append(capa_sumada)
+        
+        # 3. Calcular tiempo total de la ronda y tiempo medio de entrenamiento
+        tiempo_fin_ronda = time.time()
+        tiempo_total_ronda = tiempo_fin_ronda - estado_servidor["tiempo_inicio_ronda"]
+        
+        # Efecto Straggler (Espera por clientes lentos): Diferencia entre el primer cliente en llegar y el último
+        tiempos_llegada = [m["momento_llegada"] for m in estado_servidor["metadatos_recibidos"]]
+        espera_rezagados = max(tiempos_llegada) - min(tiempos_llegada) if len(tiempos_llegada) > 1 else 0
+        
+        # Tiempo medio de entrenamiento local
+        tiempo_medio_ent = np.mean([m["tiempo_entrenamiento"] for m in estado_servidor["metadatos_recibidos"]])
             
-        # 3. Evaluar y Loggear resultados
+        # 4. Evaluar y Loggear resultados
         modelo_global.set_weights(nuevos_pesos_globales)
         loss, acc = modelo_global.evaluate(x_test, y_test, verbose=0)
         trafico_total_ronda = sum(m["trafico_kb"] for m in estado_servidor["metadatos_recibidos"]) * 2 # Subida + Descarga
@@ -161,17 +177,21 @@ async def subir_pesos(
                 muestras_totales,
                 round(acc, 4),
                 round(loss, 4),
-                round(trafico_total_ronda, 2)
+                round(trafico_total_ronda, 2),
+                round(tiempo_total_ronda, 2),
+                round(espera_rezagados, 2),
+                round(tiempo_medio_ent, 2)
             ])
         print(f" Resultados de la ronda {estado_servidor['ronda_actual']} guardados en {ARCHIVO_CSV} \n")
         
-        # 4. Guardar nuevo modelo global actualizado, Limpiar y Avanzar ronda
+        # 5. Guardar nuevo modelo global actualizado, Limpiar y Avanzar ronda
         np.savez("modelo_global.npz", *nuevos_pesos_globales)
         guardar_modelo_binario(nuevos_pesos_globales)
         for meta in estado_servidor["metadatos_recibidos"]:
             os.remove(meta["ruta"])
         estado_servidor["metadatos_recibidos"].clear()
         estado_servidor["ronda_actual"] += 1
+        estado_servidor["tiempo_inicio_ronda"] = time.time() # Reiniciamos el reloj para la siguiente ronda
         
     return {"mensaje": "Recibido y procesado correctamente"}
 

@@ -201,6 +201,9 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                 val valorLoss = FloatArray(1)
                                 val salidasEntrenamiento = mapOf("loss" to valorLoss)
 
+                                // Iniciar cronometro
+                                val tiempoInicioEntrenamiento = System.currentTimeMillis()
+
                                 // Bucle de entrenamiento usando las epochs del servidor
                                 for (epoch in 1..epochsLocales) {
                                     interpreter.runSignature(entradasEntrenamiento, salidasEntrenamiento, "train")
@@ -208,11 +211,12 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                     delay(500)
                                 }
 
+                                // Parar cronómetro y calcular segundos
+                                val tiempoFinEntrenamiento = System.currentTimeMillis()
+                                val tiempoEntrenamientoLocal = (tiempoFinEntrenamiento - tiempoInicioEntrenamiento) / 1000.0 // en segundos
+
                                 // Extraemos los nuevos pesos
                                 actualizarPantalla("Extrayendo pesos actualizados...")
-                                //val entradasGuardar = emptyMap<String, Any>()
-                                //val entradasGuardar = mapOf("x" to datosX) // Usamos nuestras imágenes como señuelo legal
-                                //val entradaDummy = mapOf("dummy" to FloatArray(1) {0f})
                                 val entradaDummy = mapOf("dummy" to floatArrayOf(0.0f))
 
                                 val salidasGuardar = mapOf(
@@ -221,7 +225,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                     "pesos_1" to Array(128) { FloatArray(10) },
                                     "sesgos_1" to FloatArray(10)
                                 )
-                                //interpreter.runSignature(entradasGuardar, salidasGuardar, "save")
+
                                 interpreter.runSignature(
                                     entradaDummy,
                                     salidasGuardar,
@@ -248,8 +252,9 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                 val multipartBody = MultipartBody.Builder()
                                     .setType(MultipartBody.FORM)
                                     .addFormDataPart("cliente_id", "Android_1")
-                                    .addFormDataPart("num_muestras", "100") // Las 100 de tu batch
+                                    .addFormDataPart("num_muestras", "100") // Las 100 del batch
                                     .addFormDataPart("ronda_cliente", rondaServidor.toString())
+                                    .addFormDataPart("tiempo_entrenamiento", tiempoEntrenamientoLocal.toString())
                                     .addFormDataPart("file", "pesos_entrenados.bin", fileBody) // Enviamos el .bin
                                     .build()
 
