@@ -111,7 +111,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
         while (true) {
             try {
                 // 1. PREGUNTAR AL SERVIDOR (/config)
-                val reqConfig = Request.Builder().url("http://10.0.2.2:8000/config").build()
+                val reqConfig = Request.Builder().url("http://192.168.0.16:8000/config").build()
                 val respConfig = cliente.newCall(reqConfig).execute()
 
                 if (respConfig.isSuccessful) {
@@ -154,7 +154,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                 actualizarPantalla("¡Ronda $rondaServidor de $rondasObjetivo! Descargando modelo global...")
 
                                 // 2. DESCARGAR MODELO (/model/download)
-                                val reqDownload = Request.Builder().url("http://10.0.2.2:8000/model/download/bin").build()
+                                val reqDownload = Request.Builder().url("http://192.168.0.16:8000/model/download/bin").build()
                                 val respDownload = cliente.newCall(reqDownload).execute()
 
                                 // Guardamos el archivo binario en el almacenamiento interno privado de la app
@@ -268,7 +268,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                                     .build()
 
                                 val reqUpload = Request.Builder()
-                                    .url("http://10.0.2.2:8000/model/upload")
+                                    .url("http://192.168.0.16:8000/model/upload")
                                     .post(multipartBody)
                                     .build()
 
