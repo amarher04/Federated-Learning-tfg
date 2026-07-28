@@ -19,7 +19,7 @@ ARCHIVO_CSV = "resultados_experimentos.csv"
 if not os.path.exists(ARCHIVO_CSV):
     with open(ARCHIVO_CSV, mode='w', newline='') as archivo:
         writer = csv.writer(archivo)
-        writer.writerow(["Fecha", "Experimento_ID", "Ronda", "Epochs_Locales", "Muestras_Totales", "Accuracy", "Loss", "Trafico_Ronda_KB", "Tiempo_Ronda_Seg", "Espera_Rezagados_Seg", "Tiempo_Medio_Entrenamiento_Seg"])
+        writer.writerow(["Fecha", "Experimento_ID", "Ronda", "Epochs_Locales", "Muestras_Totales", "Accuracy", "Loss", "Trafico_Ronda_KB", "Tiempo_Ronda_Seg", "Espera_Rezagados_Seg", "Tiempo_Medio_Entrenamiento_Seg", "Trafico_Acumulado_KB"])
 
 # 1. PREPARAR EVALUACIÓN DE MODELO GLOBAL
 print("Cargando datos de validación en el servidor...")
@@ -51,8 +51,10 @@ estado_servidor = {
     "rondas_objetivo": 0, # Usamos como flag para saber si hay un experimento en curso o no (Si es 0, no hay experimento iniciado, servidor en reposo)
     "epochs_locales": 3,
     "clientes_esperados": 2,  # Número de clientes que esperamos recibir en cada ronda
-    "metadatos_recibidos": [] # Guardara diccionarios con info de cada cliente (id, accuracy_local, etc)
-    "tiempo_inicio_ronda": time.time() # para calcular el tiempo total de la ronda
+    "metadatos_recibidos": [], # Guardara diccionarios con info de cada cliente (id, accuracy_local, etc)
+    "tiempo_inicio_ronda": time.time(), # para calcular el tiempo total de la ronda
+    "trafico_acumulado": 0.0,
+    "seed_actual": 42
 }
 
 # 3. ENDPOINTS (GET /config, GET /model/download, POST /model/upload)
@@ -159,6 +161,7 @@ async def subir_pesos(
         modelo_global.set_weights(nuevos_pesos_globales)
         loss, acc = modelo_global.evaluate(x_test, y_test, verbose=0)
         trafico_total_ronda = sum(m["trafico_kb"] for m in estado_servidor["metadatos_recibidos"]) * 2 # Subida + Descarga
+        estado_servidor["trafico_acumulado"] += trafico_total_ronda # Sumamos al histórico
         
         print(f" --- RESULTADOS RONDA {estado_servidor['ronda_actual']} --- \n")
         print(f"    Accuracy: {acc*100:.2f}% \n")
@@ -180,9 +183,15 @@ async def subir_pesos(
                 round(trafico_total_ronda, 2),
                 round(tiempo_total_ronda, 2),
                 round(espera_rezagados, 2),
-                round(tiempo_medio_ent, 2)
+                round(tiempo_medio_ent, 2),
+                round(estado_servidor["trafico_acumulado"], 2)
             ])
         print(f" Resultados de la ronda {estado_servidor['ronda_actual']} guardados en {ARCHIVO_CSV} \n")
+        
+        # LOGICA DE PARADA TEMPRANA (90% ACCURACY)
+        if acc >= 0.90 or estado_servidor["ronda_actual"] >= estado_servidor["rondas_objetivo"]:
+            print("\n>>> OBJETIVO ALCANZADO (90% Acc) o RONDAS FINALIZADAS. Deteniendo experimento... <<<\n")
+            estado_servidor["rondas_objetivo"] = 0 # Esto avisa al Director y a los clientes de que paren
         
         # 5. Guardar nuevo modelo global actualizado, Limpiar y Avanzar ronda
         np.savez("modelo_global.npz", *nuevos_pesos_globales)
@@ -199,9 +208,14 @@ async def subir_pesos(
 class NuevaConfiguracion(BaseModel):
     epochs_locales: int
     rondas_objetivo: int  # El director nos dira cuantas rondas quiere que dure el experimento
+    seed: int
+
 
 @app.post("/admin/configurar")  # Endpoint para configurar el servidor (modo admin)
 def configurar_servidor(config: NuevaConfiguracion):
+    # Fijar semillas para reproducibilidad
+    np.random.seed(config.seed)
+    tf.random.set_seed(config.seed)
     
     # Reseteamos el estado del servidor para un nuevo experimento de cero
     modelo_nuevo = crear_modelo()
@@ -213,9 +227,11 @@ def configurar_servidor(config: NuevaConfiguracion):
     estado_servidor["ronda_actual"] = 1
     estado_servidor["rondas_objetivo"] = config.rondas_objetivo # Se activa flag de experimento en curso con el numero de rondas objetivo
     estado_servidor["metadatos_recibidos"].clear()
+    estado_servidor["trafico_acumulado"] = 0.0
+    estado_servidor["seed_actual"] = config.seed
     
     # Crear un nuevo ID de experimento para diferenciarlo en el CSV (ponemos epochs en el ID para identificarlo fácilmente)
-    estado_servidor["experimento_id"] = f"EXP_EPOCHS_{config.epochs_locales}_{datetime.now().strftime('%H%M%S')}"
+    estado_servidor["experimento_id"] = f"EXP_EPOCHS_{config.epochs_locales}_{datetime.now().strftime('%H%M%S')}_SEED_{config.seed}"
     print(f"\n{'='*40}")
     print(f" MODO ADMIN: nuevo experimento iniciado con {config.epochs_locales} epochs locales")
     print(f"\n{'='*40}")

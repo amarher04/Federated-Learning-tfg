@@ -43,6 +43,11 @@ def ejecutar_cliente_autonomo(id_cliente):
             experimento_servidor = config["experimento_id"] # Leemos ID del experimento
             rondas_objetivo = config["rondas_objetivo"] # Leemos numero de rondas objetivo para este experimento
             
+            # SINCRONIZAR SEMILLA
+            if "seed_actual" in config:
+                np.random.seed(config["seed_actual"])
+                tf.random.set_seed(config["seed_actual"])
+            
             # Si el servidor no ha iniciado un experimento (rondas_objetivo = 0) o ya hemos completado el experimento, esperamos
             if rondas_objetivo == 0 or ronda_servidor > rondas_objetivo:
                 print(f"\r[Cliente {id_cliente}] Modo reposo. Esperando nuevo experimento... ", end="")

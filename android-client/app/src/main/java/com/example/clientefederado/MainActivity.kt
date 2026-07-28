@@ -126,10 +126,19 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
                     // Leemos la variable que indica si hay un experimento activo
                     val rondasObjetivo = json.optInt("rondas_objetivo", -1)
 
+                    // DROPOUT SIMULATION
+                    // El servidor nos enviará un booleano (ej. "participa_Android_1": false). Si no lo envía, asumimos true.
+                    val miID = "Android_1" // OJO: Cambiar esto en cada móvil si se usan varios
+                    val meTocaParticipar = json.optBoolean("participa_$miID", true)
+
                     if (rondasObjetivo == 0) {
                         actualizarPantalla("Experimento finalizado. Cliente en estado de reposo...")
                         // El código no entra a descargar nada. Al terminar el if,
                         // esperará 3 segundos y volverá a preguntar silenciosamente.
+                    } else if (!meTocaParticipar) {
+                        // Si el servidor ha simulado que hemos perdido la red, no entrenamos esta ronda
+                        actualizarPantalla("Pérdida de red simulada (Dropout). Saltando ronda $rondaServidor...")
+                        delay(5000)
                     } else {
                         // Logica de reseteo si el experimento cambia
                         if (experimentoServidor != experimentoActual) {
