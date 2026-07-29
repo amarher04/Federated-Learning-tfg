@@ -128,7 +128,7 @@ suspend fun ejecutarBucleAutonomo(context: Context, actualizarPantalla: (String)
 
                     // DROPOUT SIMULATION
                     // El servidor nos enviará un booleano (ej. "participa_Android_1": false). Si no lo envía, asumimos true.
-                    val miID = "Android_1" // OJO: Cambiar esto en cada móvil si se usan varios
+                    val miID = "Samsung_M23_2" // OJO: Cambiar esto en cada móvil si se usan varios
                     val meTocaParticipar = json.optBoolean("participa_$miID", true)
 
                     if (rondasObjetivo == 0) {

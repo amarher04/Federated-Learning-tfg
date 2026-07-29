@@ -12,8 +12,8 @@ import time
 app = FastAPI(title="Servidor Aprendizaje Federado - V3")
 os.makedirs("modelos_clientes", exist_ok=True)
 
-# Configuración del log de datos en CSV
-ARCHIVO_CSV = "resultados_experimentos.csv"
+# Configuración del log de datos en CSV (Se puede cambiar nombre para cada experimento)
+ARCHIVO_CSV = "resultados_2_3_F16ZIP.csv"
 
 # Si el archivo CSV no existe, lo creamos y escribimos la cabecera
 if not os.path.exists(ARCHIVO_CSV):
@@ -50,7 +50,7 @@ estado_servidor = {
     "ronda_actual": 1,
     "rondas_objetivo": 0, # Usamos como flag para saber si hay un experimento en curso o no (Si es 0, no hay experimento iniciado, servidor en reposo)
     "epochs_locales": 3,
-    "clientes_esperados": 2,  # Número de clientes que esperamos recibir en cada ronda
+    "clientes_esperados": 5,  # Número de clientes que esperamos recibir en cada ronda
     "metadatos_recibidos": [], # Guardara diccionarios con info de cada cliente (id, accuracy_local, etc)
     "tiempo_inicio_ronda": time.time(), # para calcular el tiempo total de la ronda
     "trafico_acumulado": 0.0,
@@ -88,7 +88,7 @@ async def subir_pesos(
     if ronda_cliente != estado_servidor["ronda_actual"]:
         return {"error": "Ronda obsoleta"}
     
-    ruta_guardado = f"modelos_clientes/{file.filename}"
+    ruta_guardado = f"modelos_clientes/{cliente_id}_{file.filename}"
     with open(ruta_guardado, "wb") as buffer:
         contenido = await file.read()
         buffer.write(contenido)
@@ -132,7 +132,7 @@ async def subir_pesos(
             else:
                 # Lógica para cliente PYTHON (.npz)
                 with np.load(ruta_archivo) as datos_npz:
-                    pesos_brutos = [datos_npz[f] for f in datos_npz.files]
+                    pesos_brutos = [datos_npz[f].astype(np.float32) for f in datos_npz.files]
             
             # Ponderamos cada capa
             factor_importancia = meta["muestras"] / float(muestras_totales)
@@ -187,17 +187,25 @@ async def subir_pesos(
                 round(estado_servidor["trafico_acumulado"], 2)
             ])
         print(f" Resultados de la ronda {estado_servidor['ronda_actual']} guardados en {ARCHIVO_CSV} \n")
-        
+        """
         # LOGICA DE PARADA TEMPRANA (90% ACCURACY)
-        if acc >= 0.90 or estado_servidor["ronda_actual"] >= estado_servidor["rondas_objetivo"]:
-            print("\n>>> OBJETIVO ALCANZADO (90% Acc) o RONDAS FINALIZADAS. Deteniendo experimento... <<<\n")
+        if acc >= 0.925 or estado_servidor["ronda_actual"] >= estado_servidor["rondas_objetivo"]:
+            print("\n>>> OBJETIVO ALCANZADO (92.5% Acc) o RONDAS FINALIZADAS. Deteniendo experimento... <<<\n")
+            estado_servidor["rondas_objetivo"] = 0 # Esto avisa al Director y a los clientes de que paren
+        """    
+        if estado_servidor["ronda_actual"] >= estado_servidor["rondas_objetivo"]:
+            print("\n>>> RONDAS FINALIZADAS. Deteniendo experimento... <<<\n")
             estado_servidor["rondas_objetivo"] = 0 # Esto avisa al Director y a los clientes de que paren
         
         # 5. Guardar nuevo modelo global actualizado, Limpiar y Avanzar ronda
         np.savez("modelo_global.npz", *nuevos_pesos_globales)
         guardar_modelo_binario(nuevos_pesos_globales)
         for meta in estado_servidor["metadatos_recibidos"]:
-            os.remove(meta["ruta"])
+            try:
+                if os.path.exists(meta["ruta"]):
+                    os.remove(meta["ruta"])
+            except OSError:
+                pass
         estado_servidor["metadatos_recibidos"].clear()
         estado_servidor["ronda_actual"] += 1
         estado_servidor["tiempo_inicio_ronda"] = time.time() # Reiniciamos el reloj para la siguiente ronda
@@ -239,4 +247,4 @@ def configurar_servidor(config: NuevaConfiguracion):
     return {"mensaje": f"Experimento reiniciado con {config.epochs_locales} epochs."}
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000) # Aceptamos conexiones de cualquier dispositivo en la red local
