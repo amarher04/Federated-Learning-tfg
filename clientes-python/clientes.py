@@ -8,7 +8,11 @@ import os
 # URL escucha del servidor FastAPI
 URL_SERVIDOR = "http://127.0.0.1:8000"
 
-NUM_CLIENTES_FASE = 20  # Número de clientes que participan en la fase de entrenamiento
+NUM_CLIENTES_FASE = 2  # Número de clientes que participan en la fase de entrenamiento
+
+# ELIGE EL ESCENARIO DEL EXPERIMENTO 3.1:
+# Opciones para Python: 100 (Escenario 1:1), 1000 (Escenario 1:10), 5000 (Escenario 1:50)
+MUESTRAS_PYTHON_EXP_3_1 = 100 
 
 # Crea un modelo MLP simple para clasificación de MNIST
 def crear_modelo():
@@ -28,10 +32,16 @@ def obtener_datos_cliente(id_cliente, modo="IID", num_clientes=NUM_CLIENTES_FASE
     (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
     x_train = (x_train / 255.0).astype(np.float32)
     
-    idx_cliente = int(id_cliente) - 1  # De 0 a num_clientes-1
+    id_num = int(id_cliente)
+    if id_num >= 4:
+        idx_cliente = id_num - 4  # ID 4 será el índice 0, ID 10 será el 6
+    else:
+        idx_cliente = id_num - 1  # Por compatibilidad si ejecutas ID 1, 2 o 3 en PC
     
     # Aqui indicamos el numero de muestras total que queremos repartir entre los clientes y lo dividimos entre el numero de clientes
-    tam_lote = 10000 // num_clientes
+    #tam_lote = 10000 // num_clientes
+    
+    tam_lote = MUESTRAS_PYTHON_EXP_3_1
     
     if modo == "IID":
         # Reparto aleatorio uniforme (1000 muestras variadas por cliente)
