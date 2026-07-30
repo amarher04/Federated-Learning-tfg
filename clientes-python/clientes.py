@@ -8,6 +8,8 @@ import os
 # URL escucha del servidor FastAPI
 URL_SERVIDOR = "http://127.0.0.1:8000"
 
+NUM_CLIENTES_FASE = 20  # Número de clientes que participan en la fase de entrenamiento
+
 # Crea un modelo MLP simple para clasificación de MNIST
 def crear_modelo():
     modelo = tf.keras.models.Sequential([
@@ -18,35 +20,38 @@ def crear_modelo():
     modelo.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     return modelo
 
-def obtener_datos_cliente(id_cliente, modo="IID"):
+def obtener_datos_cliente(id_cliente, modo="IID", num_clientes=NUM_CLIENTES_FASE):
     """
-    Reparte 10.000 muestras entre 10 clientes (1.000 para cada uno).
-    id_cliente debe ser un número del 1 al 10.
+    Reparte 10.000 muestras entre el numero total de clientes indicado (num_clientes).
+    id_cliente debe ser un número del 1 al num_clientes.
     """
     (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
     x_train = (x_train / 255.0).astype(np.float32)
     
-    idx_cliente = int(id_cliente) - 1  # De 0 a 9
+    idx_cliente = int(id_cliente) - 1  # De 0 a num_clientes-1
+    
+    # Aqui indicamos el numero de muestras total que queremos repartir entre los clientes y lo dividimos entre el numero de clientes
+    tam_lote = 10000 // num_clientes
     
     if modo == "IID":
         # Reparto aleatorio uniforme (1000 muestras variadas por cliente)
         # Usamos una semilla fija para el reparto inicial para que sea reproducible
         np.random.seed(42)
         indices = np.random.permutation(len(x_train))
-        mis_indices = indices[idx_cliente * 1000 : (idx_cliente + 1) * 1000]
+        mis_indices = indices[idx_cliente * tam_lote : (idx_cliente + 1) * tam_lote]
         return x_train[mis_indices], y_train[mis_indices]
         
     elif modo == "NON_IID":
         # Reparto patológico: cada cliente solo recibe 2 dígitos consecutivos
         # Cliente 1 -> dígitos 0 y 1 | Cliente 2 -> dígitos 2 y 3 ...
-        digito_1 = idx_cliente * 2
-        digito_2 = idx_cliente * 2 + 1
-        
+        digito_1 = (idx_cliente * 2) % 10
+        digito_2 = (idx_cliente * 2 + 1) % 10
+
         # Filtramos solo los índices que corresponden a esos dos dígitos
         indices_filtrados = np.where((y_train == digito_1) | (y_train == digito_2))[0]
         
         # Cogemos 1.000 muestras de ese subconjunto
-        mis_indices = indices_filtrados[:1000]
+        mis_indices = indices_filtrados[:tam_lote]
         return x_train[mis_indices], y_train[mis_indices]
 
 def ejecutar_cliente_autonomo(id_cliente, modo_datos="IID"):
@@ -55,12 +60,10 @@ def ejecutar_cliente_autonomo(id_cliente, modo_datos="IID"):
     # Preparar datos fijos para este cliente
     (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
     x_train = x_train / 255.0
-    #mitad = len(x_train) // 2
-    #x_local, y_local = (x_train[:mitad], y_train[:mitad]) if id_cliente == "1" else (x_train[mitad:], y_train[mitad:])
-    #num_muestras_locales = len(x_local)
-    # x_local, y_local = x_train[100:200], y_train[100:200]
-    x_local, y_local = obtener_datos_cliente(id_cliente, modo_datos)
+    x_local, y_local = obtener_datos_cliente(id_cliente, modo_datos, num_clientes=NUM_CLIENTES_FASE)
     num_muestras_locales = len(x_local)
+    print(f"\n[*] Datos asignados con éxito: {num_muestras_locales} muestras locales.")
+    
     modelo = crear_modelo()
     
     ronda_completada_por_mi = 0
@@ -115,7 +118,7 @@ def ejecutar_cliente_autonomo(id_cliente, modo_datos="IID"):
                 
                 # ELIGE EL MODO PARA EL EXPERIMENTO 2.3:
                 # Opciones: "F32_RAW", "F32_ZIP", "F16_RAW", "F16_ZIP"
-                MODO_TELECOM = "F16_ZIP"
+                MODO_TELECOM = "F32_RAW"
                 
                 # 3. Subir con metadatos (Formulario)
                 ruta_subida = f"modelo_subir_c{id_cliente}.npz"

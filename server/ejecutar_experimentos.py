@@ -5,7 +5,7 @@ URL_SERVIDOR = "http://127.0.0.1:8000"
 
 RONDAS_POR_EXPERIMENTO = 20
 
-lista_epochs_a_probar = [3]
+lista_epochs_a_probar = [1]
 semillas_estadisticas = [42, 123, 456, 789, 999] # % repeticiones para validez cientifica
 
 print("Iniciando Bateria de Experimentos Automatizados...\n")
