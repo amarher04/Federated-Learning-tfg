@@ -59,8 +59,6 @@ server/modelo_global.bin
 /logs/
 /runs/
 
-# Gráficas generadas automáticamente para la memoria
-graphs/
 
 # =========================
 # IDEs y SO
